@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import datetime
 from io import StringIO
+import os
 
 app = Flask(__name__)
 
@@ -31,41 +32,54 @@ def process_tickers(tickers, start_date, end_date):
                      'LTM FCF': []}
 
     for ticker in tickers:
-        data_with_rsi = fetch_and_calculate_rsi(ticker, start_date, end_date, window)
-        prma_data = fetch_and_calculate_prma(ticker, start_date, end_date, short_window, long_window)
-        pe_ratio = get_pe_ratio([ticker])[ticker]
-        ps_ratios = get_ps_ratio([ticker])
+        try:
+            data_with_rsi = fetch_and_calculate_rsi(ticker, start_date, end_date, window)
+            if data_with_rsi is None:
+                print(f"No data available for ticker {ticker}. Skipping.")
+                continue
 
-        if ticker not in ps_ratios or isinstance(ps_ratios[ticker], str) and ps_ratios[ticker].startswith("Error"):
-            print(f"Skipping ticker {ticker} due to error in P/S ratio calculation.")
+            prma_data = fetch_and_calculate_prma(ticker, start_date, end_date, short_window, long_window)
+            if prma_data is None:
+                print(f"No data available for ticker {ticker}. Skipping.")
+                continue
+
+            pe_ratio = get_pe_ratio([ticker])[ticker]
+            ps_ratios = get_ps_ratio([ticker])
+
+            if ticker not in ps_ratios or isinstance(ps_ratios[ticker], str) and ps_ratios[ticker].startswith("Error"):
+                print(f"Skipping ticker {ticker} due to error in P/S ratio calculation.")
+                continue
+
+            ps_ratio = ps_ratios[ticker]
+            vs = get_vs(ticker, (datetime.datetime.today() - datetime.timedelta(100)).strftime('%Y-%m-%d'), end_date)
+
+            if not data_with_rsi.empty:
+                rsi = data_with_rsi['RSI'].iloc[-1]
+
+                combined_data['Ticker'].append(ticker)
+                combined_data['Latest Close'].append(prma_data['Latest Close'])
+                combined_data['RSI'].append(rsi)
+                combined_data['P/E Ratio'].append(pe_ratio)
+                combined_data['P/S Ratio'].append(ps_ratio)
+                combined_data[f'SMA_{short_window}'].append(prma_data[f'SMA_{short_window}'])
+                combined_data[f'SMA_{long_window}'].append(prma_data[f'SMA_{long_window}'])
+                combined_data['Percent Change from 50 to 200'].append(prma_data['Percent Change from 50 to 200'])
+                combined_data['Volume Surge 100 Days'].append(vs)
+                combined_data['Gross Margin'].append(get_gross_margin([ticker]))
+                combined_data['Operating Margin'].append(get_operating_margin([ticker]))
+                combined_data['LTM Revenue'].append(get_ltm_revenue([ticker]))
+
+        except Exception as e:
+            print(f"Error processing ticker {ticker}: {e}")
             continue
-
-        ps_ratio = ps_ratios[ticker]
-        vs = get_vs(ticker, (datetime.datetime.today() - datetime.timedelta(100)).strftime('%Y-%m-%d'), end_date)
-
-        if not data_with_rsi.empty:
-            rsi = data_with_rsi['RSI'].iloc[-1]
-
-            combined_data['Ticker'].append(ticker)
-            combined_data['Latest Close'].append(prma_data['Latest Close'])
-            combined_data['RSI'].append(rsi)
-            combined_data['P/E Ratio'].append(pe_ratio)
-            combined_data['P/S Ratio'].append(ps_ratio)
-            combined_data[f'SMA_{short_window}'].append(prma_data[f'SMA_{short_window}'])
-            combined_data[f'SMA_{long_window}'].append(prma_data[f'SMA_{long_window}'])
-            combined_data['Percent Change from 50 to 200'].append(prma_data['Percent Change from 50 to 200'])
-            combined_data['Volume Surge 100 Days'].append(vs)
-            combined_data['Gross Margin'].append(get_gross_margin([ticker]))
-            combined_data['Operating Margin'].append(get_operating_margin([ticker]))
-            combined_data['LTM Revenue'].append(get_ltm_revenue([ticker]))
 
     return combined_data
 
-
 def fetch_and_calculate_rsi(ticker, start_date, end_date, window=14):
     data = yf.download(ticker, start=start_date, end=end_date)
-    if not data.empty:
-        data['RSI'] = calculate_rsi(data, window)
+    if data.empty:
+        return None
+    data['RSI'] = calculate_rsi(data, window)
     return data
 
 def calculate_rsi(data, window=14):
@@ -80,23 +94,23 @@ def calculate_rsi(data, window=14):
 
 def fetch_and_calculate_prma(ticker, start_date, end_date, short_window=50, long_window=200):
     data = yf.download(ticker, start=start_date, end=end_date)
-    if not data.empty:
-        data = calculate_moving_averages(data, short_window, long_window)
-        latest_close = data['Close'].iloc[-1]
-        latest_short_ma = data[f'SMA_{short_window}'].iloc[-1]
-        latest_long_ma = data[f'SMA_{long_window}'].iloc[-1]
-        percent_change = ((latest_long_ma - latest_short_ma) / latest_short_ma) * 100
+    if data.empty:
+        return None
+    data = calculate_moving_averages(data, short_window, long_window)
+    latest_close = data['Close'].iloc[-1]
+    latest_short_ma = data[f'SMA_{short_window}'].iloc[-1]
+    latest_long_ma = data[f'SMA_{long_window}'].iloc[-1]
+    percent_change = ((latest_long_ma - latest_short_ma) / latest_short_ma) * 100
 
-        return {
-            'Ticker': ticker,
-            'Latest Close': latest_close,
-            f'SMA_{short_window}': latest_short_ma,
-            f'SMA_{long_window}': latest_long_ma,
-            'Percent Change from 50 to 200': f"{percent_change:.2f}%",
-            'Close > SMA_50': latest_close > latest_short_ma,
-            'Close > SMA_200': latest_close > latest_long_ma
-        }
-    return None
+    return {
+        'Ticker': ticker,
+        'Latest Close': latest_close,
+        f'SMA_{short_window}': latest_short_ma,
+        f'SMA_{long_window}': latest_long_ma,
+        'Percent Change from 50 to 200': f"{percent_change:.2f}%",
+        'Close > SMA_50': latest_close > latest_short_ma,
+        'Close > SMA_200': latest_close > latest_long_ma
+    }
 
 def calculate_moving_averages(data, short_window=50, long_window=200):
     data[f'SMA_{short_window}'] = data['Close'].rolling(window=short_window).mean()
@@ -147,9 +161,9 @@ def calculate_vs(data):
 
 def get_vs(ticker, start_date, end_date):
     data = yf.download(ticker, start=start_date, end=end_date)
-    if not data.empty:
-        return calculate_vs(data)
-    return None
+    if data.empty:
+        return None
+    return calculate_vs(data)
 
 def get_gross_margin(tickers):
     gross_margins = {}
@@ -220,4 +234,5 @@ def get_ltm_fcf(tickers):
     return ltm_fcfs
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
