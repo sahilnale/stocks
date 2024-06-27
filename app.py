@@ -94,9 +94,9 @@ def fetch_and_calculate_prma(ticker, start_date, end_date, short_window=50, long
             f'SMA_{long_window}': latest_long_ma,
             'Percent Change from 50 to 200': f"{percent_change:.2f}%",
             'Close > SMA_50': latest_close > latest_short_ma,
-            'Close > SMA_200': latest_close > latest_long_ma}
+            'Close > SMA_200': latest_close > latest_long_ma
+        }
     return None
-
 
 def calculate_moving_averages(data, short_window=50, long_window=200):
     data[f'SMA_{short_window}'] = data['Close'].rolling(window=short_window).mean()
@@ -123,9 +123,14 @@ def get_ps_ratio(tickers):
         try:
             stock = yf.Ticker(ticker)
             stock_price = stock.history(period="1d")['Close'].iloc[0]
+
+            if 'sharesOutstanding' not in stock.info or 'totalRevenue' not in stock.info:
+                raise ValueError(f"Required data not found for ticker {ticker}")
+
             shares_outstanding = stock.info['sharesOutstanding']
             market_cap = stock_price * shares_outstanding
-            total_revenue = stock.financials.loc['Total Revenue'].iloc[0]
+            total_revenue = stock.info['totalRevenue']
+
             ps_ratio = market_cap / total_revenue
             ps_ratios[ticker] = ps_ratio
         except Exception as e:
