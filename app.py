@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 import yfinance as yf
 import pandas as pd
 import datetime
+from io import StringIO
 
 app = Flask(__name__)
 
@@ -93,9 +94,9 @@ def fetch_and_calculate_prma(ticker, start_date, end_date, short_window=50, long
             f'SMA_{long_window}': latest_long_ma,
             'Percent Change from 50 to 200': f"{percent_change:.2f}%",
             'Close > SMA_50': latest_close > latest_short_ma,
-            'Close > SMA_200': latest_close > latest_long_ma
-        }
+            'Close > SMA_200': latest_close > latest_long_ma}
     return None
+
 
 def calculate_moving_averages(data, short_window=50, long_window=200):
     data[f'SMA_{short_window}'] = data['Close'].rolling(window=short_window).mean()
@@ -107,7 +108,7 @@ def get_pe_ratio(tickers):
     for ticker in tickers:
         try:
             stock = yf.Ticker(ticker)
-            stock_price = stock.history(period="1d")['Close'][0]
+            stock_price = stock.history(period="1d")['Close'].iloc[0]
             eps = stock.info['trailingEps']
             pe_ratio = stock_price / eps if eps != 0 else 'N/A'
             pe_ratios[ticker] = pe_ratio
@@ -120,31 +121,18 @@ def get_ps_ratio(tickers):
 
     for ticker in tickers:
         try:
-            # Get stock data
             stock = yf.Ticker(ticker)
-
-            # Get stock price
-            stock_price = stock.history(period="1d")['Close'][0]
-
-            # Get number of outstanding shares
+            stock_price = stock.history(period="1d")['Close'].iloc[0]
             shares_outstanding = stock.info['sharesOutstanding']
-
-            # Calculate market capitalization
             market_cap = stock_price * shares_outstanding
-
-            # Get total revenue (trailing twelve months)
-            total_revenue = stock.financials.loc['Total Revenue'][0]
-
-            # Calculate P/S ratio
+            total_revenue = stock.financials.loc['Total Revenue'].iloc[0]
             ps_ratio = market_cap / total_revenue
-
             ps_ratios[ticker] = ps_ratio
         except Exception as e:
             ps_ratios[ticker] = f"Error: {e}"
             print(f"Error fetching data for {ticker}: {e}")
 
     return ps_ratios
-
 
 def calculate_vs(data):
     delta = data['Volume']
@@ -159,52 +147,34 @@ def get_vs(ticker, start_date, end_date):
     return None
 
 def get_gross_margin(tickers):
-  gross_margins={}
-  for ticker in tickers:
+    gross_margins = {}
+    for ticker in tickers:
         try:
-            # Get stock data
             stock = yf.Ticker(ticker)
-
-            # Get stock price
-            profitMargin = stock.financials.loc['Gross Profit'][0]
-
-            # Get total revenue (trailing twelve months)
-            total_revenue = stock.financials.loc['Total Revenue'][0]
-
-            # Calculate P/E ratio
+            profit_margin = stock.financials.loc['Gross Profit'].iloc[0]
+            total_revenue = stock.financials.loc['Total Revenue'].iloc[0]
             if total_revenue != 0:
-                gross_margin=100*profitMargin/total_revenue
+                gross_margin = 100 * profit_margin / total_revenue
             else:
                 gross_margin = 'N/A'
-
             gross_margins[ticker] = gross_margin
-
         except Exception as e:
             gross_margins[ticker] = f"Error: {e}"
-
-  return gross_margins
+    return gross_margins
 
 def get_operating_margin(tickers):
     operating_margins = {}
 
     for ticker in tickers:
         try:
-            # Fetch financial data for the specified ticker
             stock = yf.Ticker(ticker)
             income_statement = stock.quarterly_financials
-
-            # Check if we have at least one quarter of data
             if len(income_statement.columns) < 1:
                 raise ValueError("Not enough data to calculate operating margin")
-
-            # Get the most recent operating income and revenue
             operating_income = income_statement.loc['Operating Income'].iloc[0]
             revenue = income_statement.loc['Total Revenue'].iloc[0]
-
-            # Calculate the operating margin
             if revenue == 0:
                 raise ValueError("Revenue cannot be zero")
-
             operating_margin = (operating_income / revenue) * 100
             operating_margins[ticker] = operating_margin
         except Exception as e:
@@ -213,52 +183,31 @@ def get_operating_margin(tickers):
     return operating_margins
 
 def get_ltm_revenue(tickers):
-    # Fetch the stock data
-    ltm_revenues={}
+    ltm_revenues = {}
     for ticker in tickers:
         try:
-            # Get stock data
             stock = yf.Ticker(ticker)
-
-            # Get stock price
             income_statement = stock.financials
-
-              # Check if we have at least 4 quarters of data
             if len(income_statement.columns) < 4:
                 raise ValueError("Not enough data to calculate LTM revenue")
-
-              # Calculate LTM revenue by summing up the revenue of the last 4 quarters
             ltm_revenue = income_statement.loc['Total Revenue'].iloc[:4].sum()
-
-            # Calculate P/E ratio
-
-
             ltm_revenues[ticker] = ltm_revenue
         except Exception as e:
             ltm_revenues[ticker] = f"Error: {e}"
-
     return ltm_revenues
 
 def get_ltm_fcf(tickers):
     ltm_fcfs = {}
     for ticker in tickers:
         try:
-            # Get stock data
             stock = yf.Ticker(ticker)
-
-            # Get the financial data (cash flow statement)
             cash_flow_statement = stock.cashflow
-
-            # Check if we have at least 4 quarters of data
             if len(cash_flow_statement.columns) < 4:
                 raise ValueError("Not enough data to calculate LTM FCF")
-
-            # Calculate FCF for each of the last 4 quarters
             fcf_ltm = (
                 cash_flow_statement.loc['Total Cash From Operating Activities'].iloc[:4].sum() -
                 cash_flow_statement.loc['Capital Expenditures'].iloc[:4].sum()
             )
-
             ltm_fcfs[ticker] = fcf_ltm
         except Exception as e:
             ltm_fcfs[ticker] = f"Error: {e}"
