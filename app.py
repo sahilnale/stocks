@@ -219,14 +219,17 @@ def get_ltm_fcf(tickers):
     ltm_fcfs = {}
     for ticker in tickers:
         try:
+            # Get stock data
             stock = yf.Ticker(ticker)
+
+            # Get the financial data (cash flow statement)
             cash_flow_statement = stock.cashflow
-            if len(cash_flow_statement.columns) < 4:
-                raise ValueError("Not enough data to calculate LTM FCF")
+
+
             fcf_ltm = (
-                cash_flow_statement.loc['Total Cash From Operating Activities'].iloc[:4].sum() -
-                cash_flow_statement.loc['Capital Expenditures'].iloc[:4].sum()
+                cash_flow_statement.loc['Free Cash Flow'].iloc[:1].sum()
             )
+
             ltm_fcfs[ticker] = fcf_ltm
         except Exception as e:
             ltm_fcfs[ticker] = f"Error: {e}"
@@ -234,5 +237,5 @@ def get_ltm_fcf(tickers):
     return ltm_fcfs
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
+    port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
