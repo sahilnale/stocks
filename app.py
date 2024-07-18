@@ -236,6 +236,20 @@ def get_ltm_fcf(tickers):
 
     return ltm_fcfs
 
+def get_eps(tickers):
+    eps = {}
+    for ticker in tickers:
+        url = f'https://www.alphavantage.co/query?function=EARNINGS&symbol={ticker}&apikey=JRPY225YS6DODF3C'
+        r = requests.get(url)
+        data = r.json()
+        print(data)
+        amount = data['quarterlyEarnings'][0]['reportedEPS']
+        eps[ticker] = amount
+
+
+        
+    return amount
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
